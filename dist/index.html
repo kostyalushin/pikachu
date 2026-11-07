@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#183d35">
+  <meta name="description" content="Пикачу: Блочная буря. Собирай молнии, открывай двойной прыжок и победи Райчу на пяти трёхмерных аренах.">
+  <title>Пикачу — Блочная буря</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 60'%3E%3Crect rx='14' width='60' height='60' fill='%23f9d45b'/%3E%3Cpath d='M34 6 14 34h14l-3 20 22-31H33z' fill='%23334b39'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main id="game" aria-label="Трёхмерная игра Пикачу">
+    <div id="scene"></div><div class="vignette"></div>
+    <header class="topbar">
+      <a class="brand" href="./" aria-label="Пикачу — главная"><span class="brand-mark">ϟ</span><span>PIKACHU<span class="brand-sub">БЛОЧНАЯ БУРЯ</span></span></a>
+      <div class="world-label"><span class="live-dot"></span><span id="world-name">Изумрудная долина</span><span class="world-sep">/</span><span id="level-label">УРОВЕНЬ 01</span></div>
+      <nav class="tools"><button id="sound" class="icon-btn" aria-label="Включить звук" title="Звук">♪</button><button id="help" class="icon-btn" aria-label="Как играть" title="Как играть">?</button><button id="pause" class="icon-btn" aria-label="Пауза" title="Пауза · Esc">Ⅱ</button></nav>
+    </header>
+    <section class="player-hud glass" aria-label="Показатели Пикачу"><div class="avatar">ϟ</div><div class="player-info"><div class="hud-label"><b>ПИКАЧУ</b><span id="health-value">100 / 100</span></div><div class="bar health-bar"><div id="health-fill"></div></div><div class="energy-label"><span>ЭНЕРГИЯ</span><span id="energy-value">0 / 12</span></div><div id="energy-slots" class="energy-slots"></div></div></section>
+    <section class="boss-hud glass"><div class="boss-top"><span class="boss-icon">♛</span><span id="boss-name">Райчу · Хранитель долины</span><b id="boss-value">120 / 120</b></div><div class="bar boss-bar"><div id="boss-fill"></div></div><span class="boss-tag">БОСС УРОВНЯ</span></section>
+    <aside class="quest glass"><span class="eyebrow">ТВОЁ ПРИКЛЮЧЕНИЕ</span><h3>Путь к грозе</h3><div id="quest-bolt" class="quest-row"><span class="quest-check">◇</span><span>Собери энергию молнии</span></div><div id="quest-jump" class="quest-row"><span class="quest-check">◇</span><span>Найди двойной прыжок</span></div><div id="quest-boss" class="quest-row"><span class="quest-check">◇</span><span>Победи Райчу</span></div><div class="quest-footer"><span class="tiny-bolt">ϟ</span><span>Каждый босс сильнее предыдущего</span></div></aside>
+    <div class="level-track glass" aria-label="Прогресс по уровням"><span class="track-title">МИРЫ</span><div id="level-dots"></div><span id="track-count">1 / 5</span></div>
+    <div id="toast" role="status"></div>
+    <div id="damage-flash"></div>
+    <section id="welcome" class="welcome"><div class="kicker"><span></span> МАЛЕНЬКИЙ ГЕРОЙ. БОЛЬШАЯ ГРОЗА.</div><h1>Пора<br>зажечь<span>!</span></h1><p>Собирай силу. Прыгай выше.<br>Стань молнией, которая победит Райчу.</p><button id="start" class="primary-btn"><span>ϟ</span> НАЧАТЬ ПРИКЛЮЧЕНИЕ <span class="btn-arrow">↗</span></button><div class="welcome-meta"><span>5 МИРОВ</span><i></i><span>5 БОССОВ</span><i></i><span>ОДИН ПИКАЧУ</span></div></section>
+    <div class="location-note"><span>01 — ИЗУМРУДНАЯ ДОЛИНА</span><span>Твоя история начинается здесь</span></div>
+    <footer class="bottom-hud"><div class="control-guide"><span><kbd>W</kbd><span class="wasd-bottom"><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></span></span><span class="control-copy">Исследуй<br><b>Передвижение</b></span><i></i><kbd class="wide-key">SPACE</kbd><span class="control-copy">Выше облаков<br><b>Прыжок</b></span><i></i><kbd>E</kbd><span class="control-copy">Разряди грозу<br><b>Молния</b></span></div><div class="ability-slots"><button id="jump-btn" class="ability" aria-label="Прыжок"><span class="ability-icon jump-icon">↟</span><span><b>ПРЫЖОК</b><small id="jump-status">SPACE</small></span><span class="ability-number">01</span></button><button id="attack-btn" class="ability lightning" aria-label="Атаковать молнией"><span class="ability-icon">ϟ</span><span><b>МОЛНИЯ</b><small id="attack-status">СОБЕРИ ЭНЕРГИЮ</small></span><span class="ability-number">02</span></button></div></footer>
+    <div class="mobile-pad" aria-label="Перемещение"><button data-move="w" class="pad-up" aria-label="Вперёд">↑</button><button data-move="a" aria-label="Влево">←</button><button data-move="s" aria-label="Назад">↓</button><button data-move="d" aria-label="Вправо">→</button></div>
+    <div id="modal" class="modal" hidden><section class="modal-card"><span class="modal-symbol">ϟ</span><div class="eyebrow" id="modal-kicker">БЛОЧНАЯ БУРЯ</div><h2 id="modal-title">Пауза</h2><div id="modal-copy"></div><button id="modal-action" class="primary-btn">ПРОДОЛЖИТЬ →</button><button id="restart" class="text-btn">Начать заново</button></section></div>
+    <div id="loading" class="loading"><span>ϟ</span><b>Собираем блочный мир…</b></div>
+    <div id="fatal" class="fatal" hidden><h2>Не удалось запустить 3D</h2><p>Для игры нужен браузер с поддержкой WebGL. Попробуй включить аппаратное ускорение или открыть игру в другом браузере.</p><button onclick="location.reload()">Попробовать снова</button></div>
+  </main>
+  <script type="module" src="game.js"></script>
+</body>
+</html>
