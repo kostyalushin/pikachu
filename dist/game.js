@@ -1,15 +1,18 @@
 import * as THREE from './vendor/three.module.js';
-import { LEVELS, createState, collect, attack, jump, damage, nextLevel } from './rules.js';
+import { LEVELS, createState, collect, attack, divineAttack, jump, damage, nextLevel } from './rules.js';
+import { canShowHelp, disposeDivineStrike } from './divine.js';
 
 const $ = id => document.getElementById(id);
 let state = createState(), scene, camera, renderer, world, player, boss, portal;
 let velocityY = 0, elapsed = 0, attackTimer = 2, spawnTimer = 0, toastTimer = 0, shake = 0;
 let pickups = [], hazards = [], effects = [], obstacles = [], clouds = [];
+let divineStrike = null;
 let audio, soundEnabled = false, modalAction = null, helpReturn = 'menu';
 const keys = new Set(), clock = new THREE.Clock(), boxGeo = new THREE.BoxGeometry(1, 1, 1);
 const materials = new Map(), tmp = new THREE.Vector3();
 const directions = { up: new THREE.Vector3(-1, 0, -1).normalize(), right: new THREE.Vector3(1, 0, -1).normalize() };
 const grassPalette = [0x86b752, 0x80ad4b, 0x91bb59, 0x82b14f, 0x8dbc58, 0x76a746];
+const rainbow = [0xff3154, 0xff8c32, 0xffeb55, 0x55ef79, 0x43e7ff, 0x4d7dff, 0xb65cff];
 let rngSeed = 251;
 function rand() { rngSeed = (rngSeed * 1664525 + 1013904223) >>> 0; return rngSeed / 4294967296; }
 function mat(color, glow = false) {
@@ -59,6 +62,7 @@ function tree(x, z, scale = 1, level = 0) {
 }
 function flower(x, z, color) { cube(world, 0x53783c, x, .21, z, .08, .4, .08); cube(world, color, x, .44, z, .28, .16, .28); }
 function buildWorld() {
+  divineStrike = disposeDivineStrike(divineStrike);
   if (world) scene.remove(world);
   world = new THREE.Group(); scene.add(world); pickups = []; hazards = []; effects = []; obstacles = []; clouds = []; rngSeed = 251 + state.level * 71;
   const level = LEVELS[state.level];
@@ -168,6 +172,74 @@ function doAttack() {
   boss.userData.hit = .2; updateHUD();
   if (state.bossHealth <= 0) defeatBoss();
 }
+function doDivineAttack() {
+  if (!divineAttack(state)) return;
+  keys.clear(); updateHUD();
+  for (const hazard of hazards) {
+    world.remove(hazard.mesh);
+    if (hazard.type === 'ring') { hazard.mesh.geometry.dispose(); hazard.mesh.material.dispose(); }
+  }
+  hazards = [];
+  const group = new THREE.Group(); group.position.copy(boss.position); world.add(group);
+  const temporaryMaterials = [], temporaryGeometries = [], beamMaterials = [], rings = [];
+  const path = [];
+  for (let i = 0; i <= 16; i++) {
+    const end = i === 0 || i === 16;
+    path.push(new THREE.Vector3(end ? 0 : (Math.random() - .5) * 1.2, 23 - i * 1.32, end ? 0 : (Math.random() - .5) * 1.2));
+  }
+  const addBolt = (color, offsetX, offsetZ, width) => {
+    const material = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: .96 });
+    temporaryMaterials.push(material); beamMaterials.push(material);
+    for (let i = 0; i < path.length - 1; i++) {
+      const a = path[i].clone().add(new THREE.Vector3(offsetX, 0, offsetZ));
+      const b = path[i + 1].clone().add(new THREE.Vector3(offsetX, 0, offsetZ));
+      const segment = new THREE.Mesh(boxGeo, material);
+      segment.position.copy(a).lerp(b, .5); segment.scale.set(width, width, a.distanceTo(b)); segment.lookAt(b); group.add(segment);
+    }
+  };
+  rainbow.forEach((color, i) => { const angle = i / rainbow.length * Math.PI * 2; addBolt(color, Math.cos(angle) * .22, Math.sin(angle) * .22, .13); });
+  addBolt(0xffffff, 0, 0, .1);
+  rainbow.forEach((color, i) => {
+    const geometry = new THREE.RingGeometry(.72, .9, 48);
+    const material = new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide, transparent: true, opacity: 0 });
+    const ring = new THREE.Mesh(geometry, material); ring.rotation.x = -Math.PI / 2; ring.position.y = .12; ring.scale.setScalar(.1); group.add(ring);
+    temporaryGeometries.push(geometry); temporaryMaterials.push(material); rings.push({ mesh: ring, material, delay: i * .035 });
+  });
+  const auraGeometry = new THREE.BoxGeometry(2.8, 3.7, 2.8);
+  const auraMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false });
+  const aura = new THREE.Mesh(auraGeometry, auraMaterial); aura.position.y = 1.55; group.add(aura); temporaryGeometries.push(auraGeometry); temporaryMaterials.push(auraMaterial);
+  const light = new THREE.PointLight(0xffffff, 0, 34); light.position.copy(boss.position).add(new THREE.Vector3(0, 5, 0)); world.add(light);
+  divineStrike = { time: 0, burst: false, group, light, rings, aura, auraMaterial, beamMaterials, temporaryGeometries, temporaryMaterials, bossPosition: boss.position.clone() };
+  shake = .65; tone(110, .45, 'sawtooth', .08); tone(880, .7, 'triangle', .055);
+}
+function updateDivineAttack(dt) {
+  if (!divineStrike) return;
+  const strike = divineStrike; strike.time += dt;
+  const flash = Math.max(0, 1 - strike.time / .85);
+  strike.beamMaterials.forEach(material => { material.opacity = flash * (.72 + Math.sin(elapsed * 72) * .2); });
+  strike.light.intensity = flash * (18 + Math.sin(elapsed * 60) * 5);
+  strike.auraMaterial.opacity = Math.max(0, Math.sin(Math.min(1, strike.time / .72) * Math.PI)) * .48;
+  strike.aura.scale.setScalar(.85 + strike.time * 1.8);
+  for (const ring of strike.rings) {
+    const progress = Math.max(0, Math.min(1, (strike.time - ring.delay) / .62));
+    ring.mesh.scale.setScalar(.1 + progress * 10); ring.material.opacity = progress > 0 ? (1 - progress) * .9 : 0;
+  }
+  if (strike.time < .36) {
+    boss.position.copy(strike.bossPosition); boss.position.x += (Math.random() - .5) * .18; boss.position.z += (Math.random() - .5) * .18;
+    boss.scale.setScalar(1.5 + strike.time * .9);
+  } else if (!strike.burst) {
+    const collapse = Math.min(1, (strike.time - .36) / .4);
+    boss.position.copy(strike.bossPosition); boss.position.y -= collapse * .65; boss.rotation.y += dt * (8 + collapse * 18); boss.scale.setScalar(Math.max(.08, 1.82 * (1 - collapse)));
+  }
+  if (strike.time >= .76 && !strike.burst) {
+    strike.burst = true; boss.visible = false; shake = .85;
+    rainbow.forEach(color => burst(strike.bossPosition, color, 9));
+    tone(65, .8, 'sawtooth', .09); tone(1320, .9, 'triangle', .06);
+  }
+  if (strike.time >= 1.65) {
+    divineStrike = disposeDivineStrike(strike); defeatBoss(false);
+  }
+}
 function hurt(amount) {
   if (!damage(state,amount)) return;
   shake = .25; $('damage-flash').style.opacity = '1'; setTimeout(()=>$('damage-flash').style.opacity='0',200); tone(100,.2,'sawtooth',.035); updateHUD();
@@ -181,9 +253,10 @@ function spawnShot(angleOffset = 0) {
   const delta = player.position.clone().sub(boss.position); delta.y=0; delta.normalize().applyAxisAngle(new THREE.Vector3(0,1,0),angleOffset);
   const mesh=cube(world,0xffb47b,boss.position.x,.6,boss.position.z,.5,.5,.5,true); hazards.push({type:'shot',mesh,velocity:delta.multiplyScalar(6+state.level),life:7});
 }
-function defeatBoss() {
-  state.phase='between'; state.score+=500; burst(boss.position,0xffec96,55); boss.visible=false; portal.userData.field.material.opacity=.75;
-  tone(900,.4,'triangle',.07);
+function defeatBoss(showBurst = true) {
+  state.phase='between'; state.score+=500;
+  if (showBurst) { burst(boss.position,0xffec96,55); tone(900,.4,'triangle',.07); }
+  boss.visible=false; portal.userData.field.material.opacity=.75;
   if (state.level === 4) {
     nextLevel(state); openModal('Ты — повелитель грозы!', `<p>Все пять Райчу побеждены. Ты прошёл долину, лес, каньон, ледяные вершины и остров грозы.<br><br><b>Твой счёт: ${state.score}</b><br>Маленький Пикачу. Большая победа.</p>`, 'СЫГРАТЬ ЕЩЁ РАЗ ϟ', restart);
   } else openModal('Райчу побеждён!', `<p>Отличный разряд! Впереди — <b>${LEVELS[state.level+1].name.toLowerCase()}</b>.<br>Следующий Райчу будет быстрее и сильнее.<br><br>Здоровье восстановится, а двойной прыжок останется с тобой.</p>`, 'СЛЕДУЮЩИЙ МИР →', ()=>{nextLevel(state);buildWorld();updateHUD();closeModal();toast(`Мир ${state.level+1}: ${LEVELS[state.level].name}`);});
@@ -199,6 +272,7 @@ function start() { if(state.phase!=='menu')return;state.phase='playing';document
 function tick(dt) {
   elapsed+=dt;
   if(toastTimer>0){toastTimer-=dt;if(toastTimer<=0)$('toast').classList.remove('visible');}
+  if(state.phase==='finisher') updateDivineAttack(dt);
   if(state.phase==='playing') {
     state.cooldown=Math.max(0,state.cooldown-dt);state.invulnerable=Math.max(0,state.invulnerable-dt);
     let dx=0,dz=0;
@@ -255,8 +329,8 @@ function init(){
 $('start').onclick=start;$('attack-btn').onpointerdown=e=>{e.preventDefault();doAttack();};$('jump-btn').onpointerdown=e=>{e.preventDefault();doJump();};
 $('pause').onclick=pause;$('restart').onclick=restart;$('modal-action').onclick=()=>modalAction?.();
 $('sound').onclick=()=>{soundEnabled=!soundEnabled;$('sound').textContent=soundEnabled?'♫':'♪';$('sound').setAttribute('aria-label',soundEnabled?'Выключить звук':'Включить звук');$('sound').style.color=soundEnabled?'#ffdb63':'';tone(700,.15,'triangle');toast(soundEnabled?'Звук включён':'Звук выключен');};
-$('help').onclick=()=>{if(!$('modal').hidden)return;helpReturn=state.phase;if(state.phase==='playing')state.phase='paused';openModal('Как стать грозой', '<div class="help-lines"><b>WASD / ↑↓←→</b><span>Исследуй остров и собирай кристаллы.</span><b>Space</b><span>Перепрыгивай кольца Райчу. Зелёный жетон открывает второй прыжок.</span><b>E / F</b><span>Молния сама находит босса. Золотой кристалл даёт 3 заряда.</span><b>Комбо</b><span>Удар в прыжке сильнее: 36 урона вместо 24!</span><b>♥</b><span>Сердечки восстанавливают здоровье.</span></div>', 'ВСЁ ПОНЯТНО →',()=>{state.phase=helpReturn;closeModal();});};
-document.addEventListener('keydown',e=>{if(['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code))e.preventDefault();if(e.code==='Escape'){pause();return;}if(!$('modal').hidden){if(e.code==='Enter')modalAction?.();return;}if(e.code==='Enter'&&state.phase==='menu'){start();return;}const map={KeyW:'w',KeyA:'a',KeyS:'s',KeyD:'d',KeyE:'e',KeyF:'f'};keys.add(map[e.code]||e.key.toLowerCase());if(e.code==='Space'&&!e.repeat)doJump();});
+$('help').onclick=()=>{if(!canShowHelp(state.phase,$('modal').hidden))return;helpReturn=state.phase;if(state.phase==='playing')state.phase='paused';openModal('Как стать грозой', '<div class="help-lines"><b>WASD / ↑↓←→</b><span>Исследуй остров и собирай кристаллы.</span><b>Space</b><span>Перепрыгивай кольца Райчу. Зелёный жетон открывает второй прыжок.</span><b>E / F</b><span>Молния сама находит босса. Золотой кристалл даёт 3 заряда.</span><b>Комбо</b><span>Удар в прыжке сильнее: 36 урона вместо 24!</span><b>♥</b><span>Сердечки восстанавливают здоровье.</span></div>', 'ВСЁ ПОНЯТНО →',()=>{state.phase=helpReturn;closeModal();});};
+document.addEventListener('keydown',e=>{if(['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code))e.preventDefault();if(e.code==='Escape'){pause();return;}if(!$('modal').hidden){if(e.code==='Enter')modalAction?.();return;}if(e.code==='Enter'&&state.phase==='menu'){start();return;}if(e.code==='Digit6'&&!e.repeat){doDivineAttack();return;}const map={KeyW:'w',KeyA:'a',KeyS:'s',KeyD:'d',KeyE:'e',KeyF:'f'};keys.add(map[e.code]||e.key.toLowerCase());if(e.code==='Space'&&!e.repeat)doJump();});
 document.addEventListener('keyup',e=>{const map={KeyW:'w',KeyA:'a',KeyS:'s',KeyD:'d',KeyE:'e',KeyF:'f'};keys.delete(map[e.code]||e.key.toLowerCase());});
 document.querySelectorAll('[data-move]').forEach(b=>{b.addEventListener('pointerdown',e=>{e.preventDefault();b.setPointerCapture(e.pointerId);keys.add(b.dataset.move);});for(const event of ['pointerup','pointercancel','lostpointercapture'])b.addEventListener(event,()=>keys.delete(b.dataset.move));});
 addEventListener('blur',()=>{keys.clear();if(state.phase==='playing')pause();});document.addEventListener('visibilitychange',()=>{if(document.hidden){keys.clear();if(state.phase==='playing')pause();}});addEventListener('resize',()=>{if(renderer)resize();});
