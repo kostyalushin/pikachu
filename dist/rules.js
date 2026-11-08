@@ -6,7 +6,7 @@ export const LEVELS = [
   { name: 'Остров грозы', boss: 'Райчу · Повелитель молний', health: 440, interval: 1.8, speed: 4.0, color: 0x696e9c, side: 0x454259, sky: 0x7a85ac, accent: '#d1b2ff' },
 ];
 export function createState() {
-  return { phase: 'menu', level: 0, health: 100, energy: 0, jumpLevel: 0, jumps: 0, cooldown: 0, invulnerable: 0, bossHealth: LEVELS[0].health, score: 0, collected: 0 };
+  return { phase: 'menu', level: 0, health: 100, energy: 0, jumpLevel: 0, jumps: 0, cooldown: 0, invulnerable: 0, bossHealth: LEVELS[0].health, score: 0, collected: 0, divineStrikeActive: false };
 }
 export function collect(s, type) {
   if (type === 'bolt') s.energy = Math.min(12, s.energy + 3);
@@ -17,6 +17,10 @@ export function collect(s, type) {
 export function attack(s) {
   if (s.energy < 1 || s.cooldown > 0) return false;
   s.energy--; s.cooldown = 0.55; return true;
+}
+export function divineAttack(s) {
+  if (s.phase !== 'playing' || s.divineStrikeActive || s.bossHealth <= 0) return false;
+  s.bossHealth = 0; s.divineStrikeActive = true; s.phase = 'finisher'; return true;
 }
 export function jump(s) {
   if (s.jumps >= (s.jumpLevel ? 2 : 1)) return false;
@@ -30,6 +34,7 @@ export function damage(s, amount) {
 }
 export function nextLevel(s) {
   if (s.bossHealth > 0) return false;
+  s.divineStrikeActive = false;
   if (s.level === LEVELS.length - 1) { s.phase = 'won'; return true; }
   s.level++; s.bossHealth = LEVELS[s.level].health; s.health = 100;
   s.energy = Math.min(12, s.energy + 3); s.jumps = 0; s.invulnerable = 2; s.phase = 'playing';
